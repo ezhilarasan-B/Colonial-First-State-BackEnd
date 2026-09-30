@@ -1,0 +1,1328 @@
+{
+  "info": {
+    "_postman_id": "b80e6eff-36d7-4bb8-be7b-8f15de048cb5",
+    "name": "Colonial First State API",
+    "description": "Complete Postman collection for the Colonial First State (CFS) Staff Directory REST API.\n\n### Features\n- Automated JWT Bearer authentication via collection Pre-request Script using Admin credentials (`admin` / `Password123!`).\n- Caches token and token expiry to avoid redundant authentication requests.\n- Exception handling on the Auth/Login endpoint prevents recursive execution.\n- Full CRUD support for Staff Directory and Client management, plus dual-route `/api/users` compatibility.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "exec": [
+          "// Pre-request Script for Colonial First State API (Admin)",
+          "var currentRequestName = pm.info.requestName || '';",
+          "var currentUrl = (pm.request && pm.request.url) ? pm.request.url.toString() : '';",
+          "",
+          "// 1. Skip pre-request authentication for Auth/Login request itself to prevent recursion",
+          "if (currentRequestName === 'Login' || currentUrl.indexOf('/api/auth/login') !== -1) {",
+          "    return;",
+          "}",
+          "",
+          "var baseUrl = pm.collectionVariables.get('baseUrl') || 'http://localhost:5200';",
+          "var username = pm.collectionVariables.get('auth_username') || 'admin';",
+          "var password = pm.collectionVariables.get('auth_password') || 'Password123!';",
+          "var accessToken = pm.collectionVariables.get('accessToken') || (pm.environment ? pm.environment.get('accessToken') : null);",
+          "var tokenExpiry = pm.collectionVariables.get('tokenExpiry');",
+          "var currentTime = Math.floor(Date.now() / 1000);",
+          "",
+          "// Helper function to check if token exists and is not expired (with 30-second buffer)",
+          "function isTokenValid(token, expiry) {",
+          "    if (!token || token.trim() === '') return false;",
+          "    if (expiry) {",
+          "        return currentTime < (parseInt(expiry, 10) - 30);",
+          "    }",
+          "    try {",
+          "        var parts = token.split('.');",
+          "        if (parts.length === 3) {",
+          "            var payloadStr = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));",
+          "            var payload = JSON.parse(payloadStr);",
+          "            if (payload && payload.exp) {",
+          "                return currentTime < (payload.exp - 30);",
+          "            }",
+          "        }",
+          "    } catch (e) {}",
+          "    return false;",
+          "}",
+          "",
+          "// 2. If existing token is still valid, proceed with the request",
+          "if (isTokenValid(accessToken, tokenExpiry)) {",
+          "    return;",
+          "}",
+          "",
+          "// 3. Otherwise, obtain a fresh token from Auth/Login endpoint",
+          "var authRequest = {",
+          "    url: baseUrl + '/api/auth/login',",
+          "    method: 'POST',",
+          "    header: {",
+          "        'Content-Type': 'application/json',",
+          "        'Accept': 'application/json'",
+          "    },",
+          "    body: {",
+          "        mode: 'raw',",
+          "        raw: JSON.stringify({",
+          "            username: username,",
+          "            password: password",
+          "        })",
+          "    }",
+          "};",
+          "",
+          "pm.sendRequest(authRequest, function (err, res) {",
+          "    if (err) {",
+          "        console.error('[Pre-request] Authentication call failed:', err);",
+          "        return;",
+          "    }",
+          "    if (res.code === 200) {",
+          "        var data = res.json();",
+          "        var token = data.accessToken || data.token;",
+          "        var refreshToken = data.refreshToken;",
+          "        var expiresIn = data.expiresIn || 900;",
+          "        var expiryTimestamp = (Math.floor(Date.now() / 1000) + expiresIn).toString();",
+          "        if (token) {",
+          "            pm.collectionVariables.set('accessToken', token);",
+          "            pm.collectionVariables.set('tokenExpiry', expiryTimestamp);",
+          "            if (pm.environment) {",
+          "                pm.environment.set('accessToken', token);",
+          "            }",
+          "            console.log('[Pre-request] Obtained new access token for ' + username + '.');",
+          "        }",
+          "        if (refreshToken) {",
+          "            pm.collectionVariables.set('refreshToken', refreshToken);",
+          "            if (pm.environment) {",
+          "                pm.environment.set('refreshToken', refreshToken);",
+          "            }",
+          "        }",
+          "    } else {",
+          "        console.error('[Pre-request] Authentication failed. Status:', res.code, res.text());",
+          "    }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5200",
+      "type": "string",
+      "description": "Base URL of the .NET 8 Web API backend (e.g., http://localhost:5200 or https://localhost:7001)"
+    },
+    {
+      "key": "auth_username",
+      "value": "admin",
+      "type": "string",
+      "description": "Admin username configured in the project"
+    },
+    {
+      "key": "auth_password",
+      "value": "Password123!",
+      "type": "string",
+      "description": "Admin password configured in the project"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT access token populated automatically by pre-request script or login endpoint"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT refresh token populated automatically by pre-request script or login endpoint"
+    },
+    {
+      "key": "tokenExpiry",
+      "value": "",
+      "type": "string",
+      "description": "Unix epoch timestamp in seconds indicating token expiration"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Endpoints for authentication, login, and refresh token rotation.",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains access token\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"accessToken\");",
+                  "    var token = jsonData.accessToken || jsonData.token;",
+                  "    if (token) {",
+                  "        pm.collectionVariables.set(\"accessToken\", token);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"accessToken\", token);",
+                  "        }",
+                  "    }",
+                  "    if (jsonData.refreshToken) {",
+                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        }",
+                  "    }",
+                  "    if (jsonData.expiresIn) {",
+                  "        var expiry = Math.floor(Date.now() / 1000) + jsonData.expiresIn;",
+                  "        pm.collectionVariables.set(\"tokenExpiry\", expiry.toString());",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{auth_username}}\",\n  \"password\": \"{{auth_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Authenticates credentials and returns JWT access and refresh tokens. Excluded from automated pre-request script to avoid recursion."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tokens refreshed successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"accessToken\");",
+                  "    if (jsonData.accessToken) {",
+                  "        pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                  "        }",
+                  "    }",
+                  "    if (jsonData.refreshToken) {",
+                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        }",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh-token"
+              ]
+            },
+            "description": "Exchanges an existing refresh token for a brand-new access token and rotated refresh token."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh (Alias)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tokens refreshed successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"accessToken\");",
+                  "    if (jsonData.accessToken) {",
+                  "        pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                  "        }",
+                  "    }",
+                  "    if (jsonData.refreshToken) {",
+                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        if (pm.environment) {",
+                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        }",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Alternative alias endpoint (/api/auth/refresh) for refresh token rotation."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Staff",
+      "description": "Secured Staff Directory CRUD operations (/api/staff).",
+      "item": [
+        {
+          "name": "Get Staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response contains paginated staff items\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"items\");",
+                  "    pm.expect(jsonData.items).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff?pageNumber=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff"
+              ],
+              "query": [
+                {
+                  "key": "pageNumber",
+                  "value": "1",
+                  "description": "Current page index (1-based, default 1)"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10",
+                  "description": "Number of staff directory records per page (default 10)"
+                }
+              ]
+            },
+            "description": "Retrieves paginated active staff directory entries."
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Staff (Unpaginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is an array of staff members\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                "all"
+              ]
+            },
+            "description": "Retrieves all active staff records without pagination (ideal for dropdown selection)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Staff By ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Staff record retrieved successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"id\");",
+                  "    pm.expect(jsonData).to.have.property(\"name\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Staff ID (integer)"
+                }
+              ]
+            },
+            "description": "Retrieves a single active staff member by integer ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"Staff created with ID\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"id\");",
+                  "    pm.collectionVariables.set(\"lastCreatedStaffId\", jsonData.id.toString());",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sarah Connor\",\n  \"age\": 32,\n  \"city\": \"Melbourne\",\n  \"state\": \"Victoria\",\n  \"pincode\": \"3000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff"
+              ]
+            },
+            "description": "Creates a new staff directory member. Requires Admin or StaffWrite permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Staff updated successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.name).to.include(\"Updated\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Oliver Smith Updated\",\n  \"age\": 35,\n  \"city\": \"Sydney\",\n  \"state\": \"New South Wales\",\n  \"pincode\": \"2000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Staff ID (integer)"
+                }
+              ]
+            },
+            "description": "Updates an existing staff member. Requires Admin or StaffWrite permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Staff",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/staff/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "staff",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "12",
+                  "description": "Staff ID to soft-delete (integer)"
+                }
+              ]
+            },
+            "description": "Soft deletes a staff member. Preserves record in DB while setting deletedDate and deletedBy. Requires Admin or StaffWrite permission."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Client",
+      "description": "Client management and staff assignment operations (/api/client).",
+      "item": [
+        {
+          "name": "Get Clients",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response contains paginated client items\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"items\");",
+                  "    pm.expect(jsonData.items).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/client?pageNumber=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "client"
+              ],
+              "query": [
+                {
+                  "key": "pageNumber",
+                  "value": "1",
+                  "description": "Current page index (1-based, default 1)"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10",
+                  "description": "Number of clients per page (default 10)"
+                }
+              ]
+            },
+            "description": "Retrieves paginated clients with assigned staff details."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Client By ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Client record retrieved successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"id\");",
+                  "    pm.expect(jsonData).to.have.property(\"name\");",
+                  "    pm.expect(jsonData).to.have.property(\"email\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/client/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Client ID (integer)"
+                }
+              ]
+            },
+            "description": "Retrieves a client by integer ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"Client created with ID\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"id\");",
+                  "    pm.collectionVariables.set(\"lastCreatedClientId\", jsonData.id.toString());",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Apex Wealth Advisors\",\n  \"email\": \"contact@apexwealth.com.au\",\n  \"phone\": \"0291112233\",\n  \"company\": \"Apex Capital Group\",\n  \"staffId\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/client",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "client"
+              ]
+            },
+            "description": "Creates a new client and assigns them to an existing staff member."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Client updated successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.name).to.include(\"Updated\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Global Ventures Updated\",\n  \"email\": \"info@acmeglobal.com\",\n  \"phone\": \"0291234567\",\n  \"company\": \"Acme Corporation Pty Ltd\",\n  \"staffId\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/client/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "Client ID (integer)"
+                }
+              ]
+            },
+            "description": "Updates an existing client and their assigned staff member."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/client/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "client",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "4",
+                  "description": "Client ID to soft delete (integer)"
+                }
+              ]
+            },
+            "description": "Soft deletes a client record."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Other API endpoints",
+      "description": "Dual-route compatibility endpoints (/api/users) and developer utilities.",
+      "item": [
+        {
+          "name": "Get Users (Paginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response contains paginated user items\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property(\"items\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?pageNumber=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "pageNumber",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10",
+                  "description": "Page size"
+                }
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users) mapped to StaffController.GetAll."
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Users (Unpaginated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response is an array of users\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.be.an(\"array\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "all"
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users/all) mapped to StaffController.GetAllUnpaginated."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User By ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "User / Staff ID (integer)"
+                }
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users/:id) mapped to StaffController.GetById."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jessica Alba\",\n  \"age\": 30,\n  \"city\": \"Brisbane\",\n  \"state\": \"Queensland\",\n  \"pincode\": \"4000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users) mapped to StaffController.Create."
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Oliver Smith Updated Dual\",\n  \"age\": 35,\n  \"city\": \"Sydney\",\n  \"state\": \"New South Wales\",\n  \"pincode\": \"2000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1",
+                  "description": "User / Staff ID (integer)"
+                }
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users/:id) mapped to StaffController.Update."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204 No Content\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "11",
+                  "description": "User / Staff ID (integer)"
+                }
+              ]
+            },
+            "description": "Dual route compatibility endpoint (/api/users/:id) mapped to StaffController.Delete."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger Redirect (Root /)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200 or 302 Redirect\", function () {",
+                  "    pm.expect([200, 301, 302]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ""
+              ]
+            },
+            "description": "Root endpoint that automatically redirects to Swagger UI (/swagger)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
