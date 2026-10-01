@@ -34,7 +34,7 @@ public class AuthRepository : IAuthRepository
                    modifiedDate, modifiedBy, modifiedOn, 
                    deletedDate, deletedBy, deletedOn
             FROM AuthUsers
-            WHERE username = @username 
+            WHERE username COLLATE NOCASE = @username 
               AND deletedDate IS NULL 
               AND deletedBy IS NULL;";
 

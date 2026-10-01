@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a66932dd-e7e8-4432-95e8-8d2d3920eb7d",
     "name": "Colonial First State Readonly API",
-    "description": "Read-only Postman collection for the Colonial First State (CFS) Staff Directory REST API.\n\n### Features\n- Automated JWT Bearer authentication via collection Pre-request Script using Read-Only user credentials (`authuser` / `Password123!`).\n- Caches token and token expiry to avoid redundant authentication requests.\n- Exception handling on the Auth/Login endpoint prevents recursive execution.\n- Strictly includes endpoints/actions that the readonly user is authorized to access (Read / GET operations). Destructive/write actions restricted from `StaffReadOnly` role are excluded.",
+    "description": "Read-only Postman collection for the Colonial First State (CFS) Staff Directory REST API.\n\n### Features\n- Automated JWT Bearer authentication via collection Pre-request Script using Read-Only user credentials (`readuser` / `Password123!`).\n- Caches token and token expiry to avoid redundant authentication requests.\n- Exception handling on the Auth/Login endpoint prevents recursive execution.\n- Strictly includes endpoints/actions that the readonly user is authorized to access (Read / GET operations). Destructive/write actions restricted from `StaffReadOnly` role are excluded.\n- Route versioning under `/api/v1/`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -10,7 +10,7 @@
     "bearer": [
       {
         "key": "token",
-        "value": "{{accessToken}}",
+        "value": "{{readonly_access_token}}",
         "type": "string"
       }
     ]
@@ -20,22 +20,21 @@
       "listen": "prerequest",
       "script": {
         "type": "text/javascript",
-        "packages": {},
         "exec": [
           "// Pre-request Script for Colonial First State Readonly API (Read-Only User)",
           "var currentRequestName = pm.info.requestName || '';",
           "var currentUrl = (pm.request && pm.request.url) ? pm.request.url.toString() : '';",
           "",
           "// 1. Skip pre-request authentication for Auth/Login request itself to prevent recursion",
-          "if (currentRequestName === 'Login' || currentUrl.indexOf('/api/auth/login') !== -1) {",
+          "if (currentRequestName === 'Login' || currentUrl.indexOf('/api/v1/auth/login') !== -1 || currentUrl.indexOf('/api/auth/login') !== -1) {",
           "    return;",
           "}",
           "",
           "var baseUrl = pm.collectionVariables.get('baseUrl') || 'http://localhost:5200';",
-          "var username = pm.collectionVariables.get('auth_username') || 'authuser';",
-          "var password = pm.collectionVariables.get('auth_password') || 'Password123!';",
-          "var accessToken = pm.collectionVariables.get('accessToken') || (pm.environment ? pm.environment.get('accessToken') : null);",
-          "var tokenExpiry = pm.collectionVariables.get('tokenExpiry');",
+          "var username = pm.collectionVariables.get('readonly_auth_username') || pm.collectionVariables.get('auth_username') || 'readuser';",
+          "var password = pm.collectionVariables.get('readonly_auth_password') || pm.collectionVariables.get('auth_password') || 'Password123!';",
+          "var accessToken = pm.collectionVariables.get('readonly_access_token') || (pm.environment ? pm.environment.get('readonly_access_token') : null);",
+          "var tokenExpiry = pm.collectionVariables.get('readonly_token_expiry');",
           "var currentTime = Math.floor(Date.now() / 1000);",
           "",
           "// Helper function to check if token exists and is not expired (with 30-second buffer)",
@@ -64,7 +63,7 @@
           "",
           "// 3. Otherwise, obtain a fresh token from Auth/Login endpoint",
           "var authRequest = {",
-          "    url: baseUrl + '/api/auth/login',",
+          "    url: baseUrl + '/api/v1/auth/login',",
           "    method: 'POST',",
           "    header: {",
           "        'Content-Type': 'application/json',",
@@ -91,17 +90,17 @@
           "        var expiresIn = data.expiresIn || 900;",
           "        var expiryTimestamp = (Math.floor(Date.now() / 1000) + expiresIn).toString();",
           "        if (token) {",
-          "            pm.collectionVariables.set('accessToken', token);",
-          "            pm.collectionVariables.set('tokenExpiry', expiryTimestamp);",
+          "            pm.collectionVariables.set('readonly_access_token', token);",
+          "            pm.collectionVariables.set('readonly_token_expiry', expiryTimestamp);",
           "            if (pm.environment) {",
-          "                pm.environment.set('accessToken', token);",
+          "                pm.environment.set('readonly_access_token', token);",
           "            }",
           "            console.log('[Pre-request] Obtained new access token for ' + username + '.');",
           "        }",
           "        if (refreshToken) {",
-          "            pm.collectionVariables.set('refreshToken', refreshToken);",
+          "            pm.collectionVariables.set('readonly_refresh_token', refreshToken);",
           "            if (pm.environment) {",
-          "                pm.environment.set('refreshToken', refreshToken);",
+          "                pm.environment.set('readonly_refresh_token', refreshToken);",
           "            }",
           "        }",
           "    } else {",
@@ -120,31 +119,31 @@
       "description": "Base URL of the .NET 8 Web API backend (e.g., http://localhost:5200 or https://localhost:7001)"
     },
     {
-      "key": "auth_username",
-      "value": "authuser",
+      "key": "readonly_auth_username",
+      "value": "readuser",
       "type": "string",
       "description": "Read-only staff username configured in the project"
     },
     {
-      "key": "auth_password",
+      "key": "readonly_auth_password",
       "value": "Password123!",
       "type": "string",
       "description": "Read-only staff password configured in the project"
     },
     {
-      "key": "accessToken",
+      "key": "readonly_access_token",
       "value": "",
       "type": "string",
-      "description": "JWT access token populated automatically by pre-request script or login endpoint"
+      "description": "JWT access token populated automatically by pre-request script or login endpoint for read-only user"
     },
     {
-      "key": "refreshToken",
+      "key": "readonly_refresh_token",
       "value": "",
       "type": "string",
-      "description": "JWT refresh token populated automatically by pre-request script or login endpoint"
+      "description": "JWT refresh token populated automatically by pre-request script or login endpoint for read-only user"
     },
     {
-      "key": "tokenExpiry",
+      "key": "readonly_token_expiry",
       "value": "",
       "type": "string",
       "description": "Unix epoch timestamp in seconds indicating token expiration"
@@ -153,7 +152,7 @@
   "item": [
     {
       "name": "Auth",
-      "description": "Authentication and token lifecycle endpoints for the read-only user.",
+      "description": "Authentication endpoints for obtaining and rotating JWT access & refresh tokens.",
       "item": [
         {
           "name": "Login",
@@ -172,20 +171,20 @@
                   "    pm.expect(jsonData).to.have.property(\"accessToken\");",
                   "    var token = jsonData.accessToken || jsonData.token;",
                   "    if (token) {",
-                  "        pm.collectionVariables.set(\"accessToken\", token);",
+                  "        pm.collectionVariables.set(\"readonly_access_token\", token);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"accessToken\", token);",
+                  "            pm.environment.set(\"readonly_access_token\", token);",
                   "        }",
                   "    }",
                   "    if (jsonData.refreshToken) {",
-                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        pm.collectionVariables.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "            pm.environment.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        }",
                   "    }",
                   "    if (jsonData.expiresIn) {",
                   "        var expiry = Math.floor(Date.now() / 1000) + jsonData.expiresIn;",
-                  "        pm.collectionVariables.set(\"tokenExpiry\", expiry.toString());",
+                  "        pm.collectionVariables.set(\"readonly_token_expiry\", expiry.toString());",
                   "    }",
                   "});"
                 ]
@@ -211,7 +210,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{auth_username}}\",\n  \"password\": \"{{auth_password}}\"\n}",
+              "raw": "{\n  \"username\": \"{{readonly_auth_username}}\",\n  \"password\": \"{{readonly_auth_password}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -219,17 +218,18 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
+              "raw": "{{baseUrl}}/api/v1/auth/login",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "auth",
                 "login"
               ]
             },
-            "description": "Authenticates credentials and returns JWT access and refresh tokens. Excluded from automated pre-request script to avoid recursion."
+            "description": "Authenticates read-only credentials and returns JWT access and refresh tokens. Excluded from automated pre-request script to avoid recursion."
           },
           "response": []
         },
@@ -249,15 +249,15 @@
                   "    var jsonData = pm.response.json();",
                   "    pm.expect(jsonData).to.have.property(\"accessToken\");",
                   "    if (jsonData.accessToken) {",
-                  "        pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);",
+                  "        pm.collectionVariables.set(\"readonly_access_token\", jsonData.accessToken);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                  "            pm.environment.set(\"readonly_access_token\", jsonData.accessToken);",
                   "        }",
                   "    }",
                   "    if (jsonData.refreshToken) {",
-                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        pm.collectionVariables.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "            pm.environment.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        }",
                   "    }",
                   "});"
@@ -284,7 +284,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "raw": "{\n  \"refreshToken\": \"{{readonly_refresh_token}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -292,17 +292,18 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/auth/refresh-token",
+              "raw": "{{baseUrl}}/api/v1/auth/refresh-token",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "auth",
                 "refresh-token"
               ]
             },
-            "description": "Exchanges an existing refresh token for a brand-new access token and rotated refresh token."
+            "description": "Rotates the refresh token and issues a new access token."
           },
           "response": []
         },
@@ -322,15 +323,15 @@
                   "    var jsonData = pm.response.json();",
                   "    pm.expect(jsonData).to.have.property(\"accessToken\");",
                   "    if (jsonData.accessToken) {",
-                  "        pm.collectionVariables.set(\"accessToken\", jsonData.accessToken);",
+                  "        pm.collectionVariables.set(\"readonly_access_token\", jsonData.accessToken);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"accessToken\", jsonData.accessToken);",
+                  "            pm.environment.set(\"readonly_access_token\", jsonData.accessToken);",
                   "        }",
                   "    }",
                   "    if (jsonData.refreshToken) {",
-                  "        pm.collectionVariables.set(\"refreshToken\", jsonData.refreshToken);",
+                  "        pm.collectionVariables.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        if (pm.environment) {",
-                  "            pm.environment.set(\"refreshToken\", jsonData.refreshToken);",
+                  "            pm.environment.set(\"readonly_refresh_token\", jsonData.refreshToken);",
                   "        }",
                   "    }",
                   "});"
@@ -357,7 +358,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "raw": "{\n  \"refreshToken\": \"{{readonly_refresh_token}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -365,17 +366,18 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/auth/refresh",
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "auth",
                 "refresh"
               ]
             },
-            "description": "Alternative alias endpoint (/api/auth/refresh) for refresh token rotation."
+            "description": "Alias route for refresh-token endpoint."
           },
           "response": []
         }
@@ -383,7 +385,7 @@
     },
     {
       "name": "Staff",
-      "description": "Authorized read-only Staff Directory endpoints. Write/mutating endpoints (Create, Update, Delete) are restricted by policy and excluded.",
+      "description": "Authorized read-only operations for CFS staff directory.",
       "item": [
         {
           "name": "Get Staff",
@@ -415,12 +417,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/staff?pageNumber=1&pageSize=10",
+              "raw": "{{baseUrl}}/api/v1/staff?pageNumber=1&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "staff"
               ],
               "query": [
@@ -469,17 +472,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/staff/all",
+              "raw": "{{baseUrl}}/api/v1/staff/all",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "staff",
                 "all"
               ]
             },
-            "description": "Retrieves all active staff records without pagination (ideal for dropdown selection)."
+            "description": "Retrieves all active staff directory members without pagination, ideal for client assignment dropdowns."
           },
           "response": []
         },
@@ -513,12 +517,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/staff/:id",
+              "raw": "{{baseUrl}}/api/v1/staff/:id",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "staff",
                 ":id"
               ],
@@ -530,7 +535,7 @@
                 }
               ]
             },
-            "description": "Retrieves a single active staff member by integer ID."
+            "description": "Retrieves a single staff member by integer ID."
           },
           "response": []
         }
@@ -538,7 +543,7 @@
     },
     {
       "name": "Client",
-      "description": "Authorized read-only Client directory endpoints.",
+      "description": "Authorized read-only operations for client records.",
       "item": [
         {
           "name": "Get Clients",
@@ -570,12 +575,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/client?pageNumber=1&pageSize=10",
+              "raw": "{{baseUrl}}/api/v1/client?pageNumber=1&pageSize=10",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "client"
               ],
               "query": [
@@ -626,12 +632,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/client/:id",
+              "raw": "{{baseUrl}}/api/v1/client/:id",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
+                "v1",
                 "client",
                 ":id"
               ],
@@ -651,151 +658,8 @@
     },
     {
       "name": "Other API endpoints",
-      "description": "Authorized read-only dual route endpoints (/api/users) and developer utilities.",
+      "description": "System endpoints and developer utilities.",
       "item": [
-        {
-          "name": "Get Users (Paginated)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status code is 200 OK\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "pm.test(\"Response contains paginated user items\", function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData).to.have.property(\"items\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users?pageNumber=1&pageSize=10",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users"
-              ],
-              "query": [
-                {
-                  "key": "pageNumber",
-                  "value": "1",
-                  "description": "Page number"
-                },
-                {
-                  "key": "pageSize",
-                  "value": "10",
-                  "description": "Page size"
-                }
-              ]
-            },
-            "description": "Dual route compatibility endpoint (/api/users) mapped to StaffController.GetAll."
-          },
-          "response": []
-        },
-        {
-          "name": "Get All Users (Unpaginated)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status code is 200 OK\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "pm.test(\"Response is an array of users\", function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData).to.be.an(\"array\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users/all",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "all"
-              ]
-            },
-            "description": "Dual route compatibility endpoint (/api/users/all) mapped to StaffController.GetAllUnpaginated."
-          },
-          "response": []
-        },
-        {
-          "name": "Get User By ID",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status code is 200 OK\", function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/users/:id",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "1",
-                  "description": "User / Staff ID (integer)"
-                }
-              ]
-            },
-            "description": "Dual route compatibility endpoint (/api/users/:id) mapped to StaffController.GetById."
-          },
-          "response": []
-        },
         {
           "name": "Swagger Redirect (Root /)",
           "event": [
